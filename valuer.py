@@ -2,14 +2,16 @@
 #
 # Flexible postprocess script for scoring monitor in Yandex.Contest
 #
-# version: 4.1
+# version: 4.1.1
 # author:  Nikita Sychev (https://github.com/nsychev)
 # release: January 25, 2019
+# license: MIT
+# url:     https://github.com/nsychev/contest-valuer
 
+import itertools
 import json
 import sys
 import traceback
-import itertools
 
 
 class BadTestStringError(Exception):
