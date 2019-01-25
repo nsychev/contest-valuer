@@ -152,7 +152,7 @@ def process_config(tests):
             "name": groupConfig.get("name", "group {}".format(group_id)),
             "tests": parseTests(groupConfig.get("tests", "")),
             "test_score": groupConfig.get("test_score", 0),
-            "use_partial": groupConfig.get("use_partial", False),
+            "scoring_checker": groupConfig.get("scoring_checker", False),
             "full_score": groupConfig.get("full_score", 0),
             "required": groupConfig.get("required", False),
             "depends": groupConfig.get("depends", []),
@@ -174,7 +174,7 @@ def process_config(tests):
             
             if test.verdict != "OK":
                 group_passed = False
-            elif group["use_partial"]:
+            elif group["scoring_checker"]:
                 group_score += test.points
             else:
                 group_score += group["test_score"]

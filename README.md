@@ -31,7 +31,7 @@ Field | Type | Description | Default value
 name | string | Name of this group | `"group {#id}"`
 tests | TestList | Group tests | **required**
 test_score | int | Points for each OK test | `0`
-check_partial | bool | If `True`, checker points are used for scoring | `False`
+scoring_checker | bool | If `True`, checker points are used for scoring | `False`
 full_score | int | Points if group is passed | `0`
 required | bool | If `True` and group is not passed, valuer won’t score next groups | `False`
 depends | int[] | If any group from list is not passed, valuer won’t score this group | `[]`
