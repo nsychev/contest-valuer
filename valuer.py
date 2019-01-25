@@ -1,4 +1,4 @@
-#!/usr/bin/python3.6
+#!/usr/bin/python3.4
 #
 # Flexible postprocess script for scoring monitor in Yandex.Contest
 #
