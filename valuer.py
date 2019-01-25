@@ -159,7 +159,7 @@ def process_config(tests):
             "feedback": groupConfig.get("feedback", "points")
         }
         
-        for other_group in group["check_after"]:
+        for other_group in group["depends"]:
             if not(other_group in passed_groups):
                 print("{}: skipped [required group {} failed]".format(group["name"], other_group), file=sys.stderr)
                 continue
