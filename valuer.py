@@ -1,8 +1,8 @@
-#!/usr/bin/python3.4
+#!/usr/bin/python3.7
 #
 # Flexible postprocess script for scoring monitor in Yandex.Contest
 #
-# version: 4.1.1
+# version: 4.1.2
 # author:  Nikita Sychev (https://github.com/nsychev)
 # release: January 25, 2019
 # license: MIT
@@ -65,6 +65,7 @@ class Test:
             self.verdict = "".join(list(map(lambda word: word[0], self.verdict.split("-"))))
         self.time    = int(config.get("runningTime", 0))
         self.memory  = int(config.get("memoryUsed", 0))
+        self.points  = 0
         
         pointNode  = config.get("score", {})
         for key in pointNode:
@@ -75,20 +76,20 @@ class Test:
         return self.verdict == "OK"
     
     def format_time(self):
-        if t >= 1000:
-            return "{0:>.2f} s".format(t / 1000.0)
-        return "{0} ms".format(t)
+        if self.time >= 1000:
+            return "{0:>.2f} s".format(self.time / 1000.0)
+        return "{0} ms".format(self.time)
   
     def format_memory(self):
-        if m > 2**23:
-            return "{0} MB".format(m // 2**20)
-        if m >= 2**20:
-            return "{0:.1f} MB".format(m / 2**20)
-        if m > 2**13:
-            return "{0} KB".format(m // 2**10)
-        if m >= 2**10:
-            return "{0:.1f} KB".format(m / 2**10)
-        return "{0} bytes".format(m)
+        if self.memory > 2**23:
+            return "{0} MB".format(self.memory // 2**20)
+        if self.memory >= 2**20:
+            return "{0:.1f} MB".format(self.memory / 2**20)
+        if self.memory > 2**13:
+            return "{0} KB".format(self.memory // 2**10)
+        if self.memory >= 2**10:
+            return "{0:.1f} KB".format(self.memory / 2**10)
+        return "{0} bytes".format(self.memory)
 
 
 def format_points(points, short=False):
