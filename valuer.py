@@ -2,7 +2,7 @@
 #
 # Flexible postprocess script for scoring monitor in Yandex.Contest
 #
-# version: 5.1
+# version: 5.1.1
 # author:  Nikita Sychev (https://github.com/nsychev)
 # release: November 27, 2023
 # license: MIT
@@ -84,8 +84,9 @@ class Test:
         self.full_verdict = config.get("verdict", "Unknown")
         if "-" in self.verdict:
             self.verdict = "".join(list(map(lambda word: word[0], self.verdict.split("-"))))
-        self.time    = int(config.get("runningTime", 0))
-        self.memory  = int(config.get("memoryUsed", 0))
+        self.time = int(config.get("runningTime", 0))
+        self.memory = int(config.get("memoryUsed", 0))
+        self.testsetName = config.get("testsetName", "")
         
         pointNode  = config.get("score", {})
         for key in pointNode:
@@ -195,7 +196,8 @@ def process_config(tests):
     for group_id, groupConfig in zip(itertools.count(), config):
         group = {
             "name": groupConfig.get("name", "group {}".format(group_id)),
-            "tests": parseTests(groupConfig.get("tests", "")),
+            "tests": groupConfig.get("tests"),
+            "testset": groupConfig.get("testset"),
             "test_score": groupConfig.get("test_score", 0),
             "scoring_checker": groupConfig.get("scoring_checker", False),
             "full_score": groupConfig.get("full_score", 0),
@@ -216,11 +218,22 @@ def process_config(tests):
         group_tests = []
         group_passed = True
         group_score = 0
-        
-        for test_id in group["tests"]:
-            test = tests.get(test_id, Test({"testName": "tests/{}".format(test_id), "sequenceId": test_id}))
-            group_tests.append(test)
-            
+
+        if group["tests"] is None and group["testset"] is None:
+            raise ValueError(f"You should define either 'tests' or 'testset' key in each group, none found in {group['name']}")
+        if group["tests"] is not None and group["testset"] is not None:
+            raise ValueError(f"You should define either 'tests' or 'testset' key in each group, both found in {group['name']}")
+
+        if group["tests"] is not None:
+            for test_id in parseTests(group["tests"]):
+                test = tests.get(test_id, Test({"testName": "tests/{}".format(test_id), "sequenceId": test_id}))
+                group_tests.append(test)
+        if group["testset"] is not None:
+            for test in tests.values():
+                if test.testsetName == group["testset"]:
+                    group_tests.append(test)
+
+        for test in group_tests:
             if test.verdict != "OK":
                 group_passed = False
             elif group["scoring_checker"]:
