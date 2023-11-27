@@ -1,17 +1,31 @@
-#!/usr/bin/python3.7
+#!/usr/local/bin/python3.7
 #
 # Flexible postprocess script for scoring monitor in Yandex.Contest
 #
-# version: 4.1.2
+# version: 5.1
 # author:  Nikita Sychev (https://github.com/nsychev)
-# release: January 25, 2019
+# release: November 27, 2023
 # license: MIT
 # url:     https://github.com/nsychev/contest-valuer
 
 import itertools
 import json
+import os
 import sys
 import traceback
+
+"""
+Algorithm for getting test number. This should be either "sequential" or "smart".
+
+"sequential" - Use sequence number of test in judging log. This doesn't work if
+               you use “check until first fail in testset”, because some tests
+               are skipped but sequence number are not.
+
+"smart"      - Use test name to detect test number. This doesn't work if you
+               have different folders for tests (e.g. tests/testset1/01,
+               test/testset2/01, ...)
+"""
+TEST_EXTRACTION_MODE = "sequential"
 
 
 class BadTestStringError(Exception):
@@ -59,13 +73,19 @@ class Test:
     '''Object to store test info.'''
     
     def __init__(self, config):
-        self.id      = config.get("sequenceNumber", None)
-        self.verdict = config.get("verdict", "undefined").upper()
+        if TEST_EXTRACTION_MODE == "sequential":
+            self.id = config.get("sequenceNumber", None)
+        elif TEST_EXTRACTION_MODE == "smart":
+            file_name = config.get("testName", "tests/0").split("/")[-1]
+            self.id = int("".join(filter(str.isdigit, file_name)))
+        else:
+            raise ValueError(f"Unknown test extraction mode: {TEST_EXTRACTION_MODE}")
+        self.verdict = config.get("verdict", "U").upper()
+        self.full_verdict = config.get("verdict", "Unknown")
         if "-" in self.verdict:
             self.verdict = "".join(list(map(lambda word: word[0], self.verdict.split("-"))))
         self.time    = int(config.get("runningTime", 0))
         self.memory  = int(config.get("memoryUsed", 0))
-        self.points  = 0
         
         pointNode  = config.get("score", {})
         for key in pointNode:
@@ -103,40 +123,58 @@ def format_points(points, short=False):
         "pt" if short else "point"
     )
     
-
-FEEDBACK_MODES = {
-    "state":    lambda name, passed, points, tests: "{}: {}".format(name, "passed" if passed else "failed"),
-    "points":   lambda name, passed, points, tests: "{}: {}".format(name, format_points(points)),
-    "verdicts": lambda name, passed, points, tests: "{}: {}\n".format(name, format_points(points)) + " ".join([
-        test.verdict
-        for test in tests
-    ]),
-    "test_points": lambda name, passed, points, tests: "{}: {}\n".format(name, format_points(points)) + "\n".join([
-        "{}: {} {}".format(test.id, test.verdict, format_points(test.points, short=True))
-        for test in tests
-    ]),
-    "full": lambda name, passed, points, tests: "{}: {}\n".format(name, format_points(points)) + "\n".join([
-        "{}: {}, {}, {}".format(test.id, test.verdict, test.format_time(), test.format_memory())
-        for test in tests
-    ]),
-    "full_points": lambda name, passed, points, tests: "{}: {}\n".format(name, format_points(points)) + "\n".join([
-        "{}: {} {}, {}, {}".format(
-            test.id, test.verdict, format_points(test.points, short=True), 
-            test.format_time(), test.format_memory()
+    
+class FeedbackMode:
+    @staticmethod
+    def state_only(name, passed, points, tests):
+        return "{}: {}".format(name, "passed" if passed else "failed")
+    
+    @staticmethod
+    def points(name, passed, points, tests):
+        return "{}: {}, {}".format(
+            name,
+            "passed" if passed else "failed",
+            format_points(points)
         )
-        for test in tests
-    ])
-}
+        
+    @staticmethod
+    def verdicts(name, passed, points, tests):
+        header = FeedbackMode.points(name, passed, points, tests)
+        verdicts = " ".join(test.verdict for test in tests)
+        return header + "\n" + verdicts
+
+    @staticmethod
+    def test_points(name, passed, points, tests):
+        header = FeedbackMode.points(name, passed, points, tests)
+        details = "\n".join(
+            "{}: {} {}".format(test.id, test.verdict, format_points(test.points, short=True))
+            for test in tests
+        )
+        return header + "\n" + details
+    
+    @staticmethod
+    def first_failed(name, passed, points, tests):
+        header = FeedbackMode.points(name, passed, points, tests)
+        
+        if passed:
+            return header
+        else:
+            test = next(filter(lambda test: test.verdict != "OK", tests))
+            
+            details = "test {}: {}".format(test.id, test.full_verdict)
+            
+            return header + "\n" + details
 
 
-def process_log():
+def process_log(report):
     '''Processes Yandex.Contest run log.'''
     
     data = {}
-    report = json.loads(input())
+    
     for test_object in report["tests"]:
         test = Test(test_object)
         data[test.id] = test
+
     return data
 
 
@@ -146,7 +184,13 @@ def process_config(tests):
     final_score = 0
     passed_groups = []
     
-    config = json.loads(open("config.json").read())
+    for item in os.listdir():
+        if item.startswith("valuer") and item.endswith(".json") or item == "config.json":
+            with open(item) as config_file:
+                config = json.loads(config_file.read())
+                break
+    else:
+        raise ValueError("Config file not found. Add config.json or valuer*.json file in postprocessor files.")
 
     for group_id, groupConfig in zip(itertools.count(), config):
         group = {
@@ -174,7 +218,7 @@ def process_config(tests):
         group_score = 0
         
         for test_id in group["tests"]:
-            test = tests.get(test_id, Test({"sequenceId": test_id}))
+            test = tests.get(test_id, Test({"testName": "tests/{}".format(test_id), "sequenceId": test_id}))
             group_tests.append(test)
             
             if test.verdict != "OK":
@@ -189,7 +233,10 @@ def process_config(tests):
             passed_groups.append(group_id)
         
         final_score += group_score
-        print(FEEDBACK_MODES[group["feedback"]](group["name"], group_passed, group_score, group_tests), "\n", file=sys.stderr)
+        
+        feedback_printer = getattr(FeedbackMode, group["feedback"])
+        
+        print(feedback_printer(group["name"], group_passed, group_score, group_tests), "\n", file=sys.stderr)
         
         if group["required"] and not group_passed:
             break
@@ -199,15 +246,18 @@ def process_config(tests):
 
 def main():
     try:
-        tests = process_log()
-        final_score = process_config(tests)
+        report = json.loads(input())
+        
+        tests = process_log(report)
+        score = process_config(tests)
+        
+        print(score)
+        print("total:", format_points(score), file=sys.stderr)
     except Exception as e:
-        print(-239)
+        print(-1)
+        print("Postprocessor failed", file=sys.stderr)
         traceback.print_exc(file=sys.stderr)
         sys.exit(1)
-
-    print(final_score)
-    print("total:", format_points(final_score), file=sys.stderr)
 
    
 if __name__ == "__main__":
