@@ -233,10 +233,6 @@ def process_config(tests):
                 if test.testsetName == group["testset"]:
                     group_tests.append(test)
 
-        if len(group_tests) == 0:
-            group_passed = False
-            print(f"{group['name']}: no tests ran\n", file=sys.stderr)
-
         for test in group_tests:
             if test.verdict != "OK":
                 group_passed = False
@@ -244,7 +240,10 @@ def process_config(tests):
                 group_score += test.points
             else:
                 group_score += group["test_score"]
-            
+
+        if len(group_tests) == 0:
+            group_passed = False
+
         if group_passed:
             group_score += group["full_score"]
             passed_groups.append(group_id)
