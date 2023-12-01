@@ -2,9 +2,9 @@
 #
 # Flexible postprocess script for scoring monitor in Yandex.Contest
 #
-# version: 5.1.1
+# version: 5.1.2
 # author:  Nikita Sychev (https://github.com/nsychev)
-# release: November 27, 2023
+# release: December 1, 2023
 # license: MIT
 # url:     https://github.com/nsychev/contest-valuer
 
@@ -232,6 +232,10 @@ def process_config(tests):
             for test in tests.values():
                 if test.testsetName == group["testset"]:
                     group_tests.append(test)
+
+        if len(group_tests) == 0:
+            group_passed = False
+            print(f"{group['name']}: no tests ran\n", file=sys.stderr)
 
         for test in group_tests:
             if test.verdict != "OK":
