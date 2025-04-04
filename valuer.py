@@ -2,15 +2,16 @@
 #
 # Flexible postprocess script for scoring monitor in Yandex.Contest
 #
-# version: 5.2
+# version: 5.2.1
 # author:  Nikita Sychev (https://github.com/nsychev)
-# release: December 1, 2023
+# release: April 5, 2025
 # license: MIT
 # url:     https://github.com/nsychev/contest-valuer
 
 import itertools
 import json
 import os
+import io
 import sys
 import traceback
 
@@ -24,11 +25,12 @@ Algorithm for getting test number. This should be either "sequential" or "smart"
 
 "smart"      - Use test name to detect test number. This doesn't work if you
                have different folders for tests (e.g. tests/testset1/01,
-               test/testset2/01, ...)
+               tests/testset2/01, ...)
 """
 
+FEEDBACK_MODE = "auto"  # "auto"/"full"/"compact"
 
-FEEDBACK = {
+FEEDBACK_FULL = {
     "GROUP": {
         "PREFIX": "- ",
         "POSTFIX": ": ",
@@ -56,7 +58,7 @@ FEEDBACK = {
     },
 }
 """
-Formatting for feedback messages with default values:
+Formatting for feedback messages with default values and full mode:
 
 ```
 - sample: passed
@@ -114,6 +116,96 @@ For config:
 ]
 ```
 """
+
+FEEDBACK_COMPACT = {
+    "GROUP": {
+        "PREFIX": "",
+        "POSTFIX": ": ",
+    },
+    "GROUP_POINTS": {
+        "PREFIX": ", ",
+        "POSTFIX": "",
+    },
+    "TEST_NUM": {
+        "PREFIX": "test ",
+        "POSTFIX": ": ",
+    },
+    "TEST_POINTS": {
+        "PREFIX": ", ",
+        "POSTFIX": "",
+    },
+    "TEST_VERDICT": {
+        "PREFIX": "",
+        "POSTFIX": "",
+    },
+    "VERDICTS": {
+        "PREFIX": "",
+        "POSTFIX": "",
+        "JOINER": " ",
+    },
+}
+"""
+Formatting for compact feedback messages with default values and compact mode:
+
+```
+sample: passed
+group1: passed, 30 pts
+group2: passed, 60 pts
+OK OK OK
+group3: passed, 5 pts
+test 10: OK, 10 pts
+test 11: OK, 10 pts
+test 12: OK, 10 pts
+group4: failed, 0 pts
+test 14: wrong-answer
+total: 95 pts
+```
+
+For config:
+```json
+[
+    {
+        "name": "sample",
+        "testset": "samples",
+        "required": true,
+        "feedback": "state_only"
+    },
+    {
+        "name": "group1",
+        "testset": "1",
+        "full_score": 30,
+        "required": false,
+        "feedback": "points"
+    },
+    {
+        "name": "group2",
+        "testset": "2",
+        "full_score": 60,
+        "required": false,
+        "depends": [1],
+        "feedback": "verdicts"
+    },
+    {
+        "name": "group3",
+        "testset": "3",
+        "required": false,
+        "depends": [1, 2],
+        "full_score": 5,
+        "feedback": "test_points"
+    },
+    {
+        "name": "group4",
+        "testset": "4",
+        "required": false,
+        "full_score": 5,
+        "feedback": "first_failed"
+    }
+]
+```
+"""
+
+feedback_io_compact = io.StringIO()
+feedback_io_full = io.StringIO()
 
 
 class BadTestStringError(Exception):
@@ -175,7 +267,9 @@ class Test:
             file_name = config.get("testName", "tests/0").split("/")[-1]
             self.id = int("".join(filter(str.isdigit, file_name)))
         else:
-            raise ValueError(f"Unknown test extraction mode: {TEST_EXTRACTION_MODE}")
+            raise ValueError(
+                "Unknown test extraction mode: {}".format(TEST_EXTRACTION_MODE)
+            )
         self.verdict = config.get("verdict", "U").upper()
         self.full_verdict = config.get("verdict", "Unknown")
         if "-" in self.verdict:
@@ -206,80 +300,181 @@ def format_points(points, short=False):
 
 class FeedbackMode:
     @staticmethod
-    def state_only(name, passed, points, tests):
-        return "{}{}{}{}".format(
-            FEEDBACK["GROUP"]["PREFIX"],
-            name,
-            FEEDBACK["GROUP"]["POSTFIX"],
-            "passed" if passed else "failed",
-        )
-
-    @staticmethod
-    def points(name, passed, points, tests):
-        return "{}{}{}{}{}{}{}".format(
-            FEEDBACK["GROUP"]["PREFIX"],
-            name,
-            FEEDBACK["GROUP"]["POSTFIX"],
-            "passed" if passed else "failed",
-            FEEDBACK["GROUP_POINTS"]["PREFIX"],
-            format_points(points),
-            FEEDBACK["GROUP_POINTS"]["POSTFIX"],
-        )
-
-    @staticmethod
-    def verdicts(name, passed, points, tests):
-        header = FeedbackMode.points(name, passed, points, tests)
-        verdicts = (
-            len(FEEDBACK["GROUP"]["PREFIX"] + name + FEEDBACK["GROUP"]["POSTFIX"]) * " "
-            + FEEDBACK["VERDICTS"]["PREFIX"]
-            + FEEDBACK["VERDICTS"]["JOINER"].join(test.verdict for test in tests)
-            + FEEDBACK["VERDICTS"]["POSTFIX"]
-        )
-        return header + "\n" + verdicts
-
-    @staticmethod
-    def test_points(name, passed, points, tests):
-        header = FeedbackMode.points(name, passed, points, tests)
-        details = "\n".join(
-            (
-                "{}{}{}{}{}{}{}".format(
-                    len(FEEDBACK["GROUP"]["PREFIX"] + name + FEEDBACK["GROUP"]["POSTFIX"]) * " ",
-                    FEEDBACK["TEST_NUM"]["PREFIX"],
-                    test.id,
-                    FEEDBACK["TEST_NUM"]["POSTFIX"],
-                    FEEDBACK["TEST_VERDICT"]["PREFIX"],
-                    test.verdict,
-                    FEEDBACK["TEST_VERDICT"]["POSTFIX"],
-                )
-                + (
-                    (FEEDBACK["TEST_POINTS"]["PREFIX"] + format_points(test.points))
-                    if hasattr(test, "points")
-                    else ""
-                )
+    def state_only(name, passed, points, tests, feedback_mode):
+        if feedback_mode == "full":
+            return "{}{}{}{}".format(
+                FEEDBACK_FULL["GROUP"]["PREFIX"],
+                name,
+                FEEDBACK_FULL["GROUP"]["POSTFIX"],
+                "passed" if passed else "failed",
             )
-            for test in tests
-        )
-        return header + "\n" + details
-
-    @staticmethod
-    def first_failed(name, passed, points, tests):
-        header = FeedbackMode.points(name, passed, points, tests)
-
-        if passed:
-            return header
+        elif feedback_mode == "compact":
+            return "{}{}{}{}".format(
+                FEEDBACK_COMPACT["GROUP"]["PREFIX"],
+                name,
+                FEEDBACK_COMPACT["GROUP"]["POSTFIX"],
+                "passed" if passed else "failed",
+            )
         else:
-            test = next(filter(lambda test: test.verdict != "OK", tests))
-            details = "{}{}{}{}{}{}{}".format(
-                len(FEEDBACK["GROUP"]["PREFIX"] + name + FEEDBACK["GROUP"]["POSTFIX"]) * " ",
-                FEEDBACK["TEST_NUM"]["PREFIX"],
-                test.id,
-                FEEDBACK["TEST_NUM"]["POSTFIX"],
-                FEEDBACK["TEST_VERDICT"]["PREFIX"],
-                test.full_verdict,
-                FEEDBACK["TEST_VERDICT"]["POSTFIX"],
-            )
+            raise ValueError("Unknown feedback mode: {}".format(feedback_mode))
 
+    @staticmethod
+    def points(name, passed, points, tests, feedback_mode):
+        if feedback_mode == "full":
+            return "{}{}{}{}{}{}{}".format(
+                FEEDBACK_FULL["GROUP"]["PREFIX"],
+                name,
+                FEEDBACK_FULL["GROUP"]["POSTFIX"],
+                "passed" if passed else "failed",
+                FEEDBACK_FULL["GROUP_POINTS"]["PREFIX"],
+                format_points(points),
+                FEEDBACK_FULL["GROUP_POINTS"]["POSTFIX"],
+            )
+        elif feedback_mode == "compact":
+            return "{}{}{}{}{}{}{}".format(
+                FEEDBACK_COMPACT["GROUP"]["PREFIX"],
+                name,
+                FEEDBACK_COMPACT["GROUP"]["POSTFIX"],
+                "passed" if passed else "failed",
+                FEEDBACK_COMPACT["GROUP_POINTS"]["PREFIX"],
+                format_points(points, short=True),
+                FEEDBACK_COMPACT["GROUP_POINTS"]["POSTFIX"],
+            )
+        else:
+            raise ValueError("Unknown feedback mode: {}".format(feedback_mode))
+
+    @staticmethod
+    def verdicts(name, passed, points, tests, feedback_mode):
+        if feedback_mode == "full":
+            header = FeedbackMode.points(name, passed, points, tests, feedback_mode)
+            verdicts = (
+                len(
+                    FEEDBACK_FULL["GROUP"]["PREFIX"]
+                    + name
+                    + FEEDBACK_FULL["GROUP"]["POSTFIX"]
+                )
+                * " "
+                + FEEDBACK_FULL["VERDICTS"]["PREFIX"]
+                + FEEDBACK_FULL["VERDICTS"]["JOINER"].join(
+                    test.verdict for test in tests
+                )
+                + FEEDBACK_FULL["VERDICTS"]["POSTFIX"]
+            )
+            return header + "\n" + verdicts
+        elif feedback_mode == "compact":
+            header = FeedbackMode.points(name, passed, points, tests, feedback_mode)
+            verdicts = (
+                FEEDBACK_COMPACT["VERDICTS"]["PREFIX"]
+                + FEEDBACK_COMPACT["VERDICTS"]["JOINER"].join(
+                    test.verdict for test in tests
+                )
+                + FEEDBACK_COMPACT["VERDICTS"]["POSTFIX"]
+            )
+            return header + "\n" + verdicts
+        else:
+            raise ValueError("Unknown feedback mode: {}".format(feedback_mode))
+
+    @staticmethod
+    def test_points(name, passed, points, tests, feedback_mode):
+        if feedback_mode == "full":
+            header = FeedbackMode.points(name, passed, points, tests, feedback_mode)
+            details = "\n".join(
+                (
+                    "{}{}{}{}{}{}{}".format(
+                        len(
+                            FEEDBACK_FULL["GROUP"]["PREFIX"]
+                            + name
+                            + FEEDBACK_FULL["GROUP"]["POSTFIX"]
+                        )
+                        * " ",
+                        FEEDBACK_FULL["TEST_NUM"]["PREFIX"],
+                        test.id,
+                        FEEDBACK_FULL["TEST_NUM"]["POSTFIX"],
+                        FEEDBACK_FULL["TEST_VERDICT"]["PREFIX"],
+                        test.verdict,
+                        FEEDBACK_FULL["TEST_VERDICT"]["POSTFIX"],
+                    )
+                    + (
+                        (
+                            FEEDBACK_FULL["TEST_POINTS"]["PREFIX"]
+                            + format_points(test.points)
+                        )
+                        if hasattr(test, "points")
+                        else ""
+                    )
+                )
+                for test in tests
+            )
             return header + "\n" + details
+        elif feedback_mode == "compact":
+            header = FeedbackMode.points(name, passed, points, tests, feedback_mode)
+            details = "\n".join(
+                (
+                    "{}{}{}{}{}{}".format(
+                        FEEDBACK_COMPACT["TEST_NUM"]["PREFIX"],
+                        test.id,
+                        FEEDBACK_COMPACT["TEST_NUM"]["POSTFIX"],
+                        FEEDBACK_COMPACT["TEST_VERDICT"]["PREFIX"],
+                        test.verdict,
+                        FEEDBACK_COMPACT["TEST_VERDICT"]["POSTFIX"],
+                    )
+                    + (
+                        (
+                            FEEDBACK_COMPACT["TEST_POINTS"]["PREFIX"]
+                            + format_points(test.points, short=True)
+                        )
+                        if hasattr(test, "points")
+                        else ""
+                    )
+                )
+                for test in tests
+            )
+            return header + "\n" + details
+        else:
+            raise ValueError("Unknown feedback mode: {}".format(feedback_mode))
+
+    @staticmethod
+    def first_failed(name, passed, points, tests, feedback_mode):
+        if feedback_mode == "full":
+            header = FeedbackMode.points(name, passed, points, tests, feedback_mode)
+            if passed:
+                return header
+            else:
+                test = next(filter(lambda test: test.verdict != "OK", tests))
+                details = "{}{}{}{}{}{}{}".format(
+                    len(
+                        FEEDBACK_FULL["GROUP"]["PREFIX"]
+                        + name
+                        + FEEDBACK_FULL["GROUP"]["POSTFIX"]
+                    )
+                    * " ",
+                    FEEDBACK_FULL["TEST_NUM"]["PREFIX"],
+                    test.id,
+                    FEEDBACK_FULL["TEST_NUM"]["POSTFIX"],
+                    FEEDBACK_FULL["TEST_VERDICT"]["PREFIX"],
+                    test.full_verdict,
+                    FEEDBACK_FULL["TEST_VERDICT"]["POSTFIX"],
+                )
+
+                return header + "\n" + details
+        elif feedback_mode == "compact":
+            header = FeedbackMode.points(name, passed, points, tests, feedback_mode)
+            if passed:
+                return header
+            else:
+                test = next(filter(lambda test: test.verdict != "OK", tests))
+                details = "{}{}{}{}{}{}".format(
+                    FEEDBACK_COMPACT["TEST_NUM"]["PREFIX"],
+                    test.id,
+                    FEEDBACK_COMPACT["TEST_NUM"]["POSTFIX"],
+                    FEEDBACK_COMPACT["TEST_VERDICT"]["PREFIX"],
+                    test.full_verdict,
+                    FEEDBACK_COMPACT["TEST_VERDICT"]["POSTFIX"],
+                )
+
+                return header + "\n" + details
+        else:
+            raise ValueError("Unknown feedback mode: {}".format(feedback_mode))
 
 
 def process_log(report):
@@ -330,12 +525,46 @@ def process_config(tests):
         skip = False
         for other_group in group["depends"]:
             if other_group not in passed_groups:
-                print(
-                    "{}: skipped [required group {} failed]".format(
-                        group["name"], other_group
-                    ),
-                    file=sys.stderr,
-                )
+                if FEEDBACK_MODE == "compact":
+                    print(
+                        "{}{}{}skipped [required group {} failed]".format(
+                            FEEDBACK_COMPACT["GROUP"]["PREFIX"],
+                            group["name"],
+                            FEEDBACK_COMPACT["GROUP"]["POSTFIX"],
+                            other_group,
+                        ),
+                        file=feedback_io_compact,
+                    )
+                elif FEEDBACK_MODE == "full":
+                    print(
+                        "{}{}{}skipped [required group {} failed]".format(
+                            FEEDBACK_FULL["GROUP"]["PREFIX"],
+                            group["name"],
+                            FEEDBACK_FULL["GROUP"]["POSTFIX"],
+                            other_group,
+                        ),
+                        file=feedback_io_full,
+                    )
+                else:
+                    print(
+                        "{}{}{}skipped [required group {} failed]".format(
+                            FEEDBACK_COMPACT["GROUP"]["PREFIX"],
+                            group["name"],
+                            FEEDBACK_COMPACT["GROUP"]["POSTFIX"],
+                            other_group,
+                        ),
+                        file=feedback_io_compact,
+                    )
+                    print(
+                        "{}{}{}skipped [required group {} failed]".format(
+                            FEEDBACK_FULL["GROUP"]["PREFIX"],
+                            group["name"],
+                            FEEDBACK_FULL["GROUP"]["POSTFIX"],
+                            other_group,
+                        ),
+                        file=feedback_io_full,
+                    )
+
                 skip = True
                 break
         if skip:
@@ -347,11 +576,15 @@ def process_config(tests):
 
         if group["tests"] is None and group["testset"] is None:
             raise ValueError(
-                f"You should define either 'tests' or 'testset' key in each group, none found in {group['name']}"
+                "You should define either 'tests' or 'testset' key in each group, none found in {}".format(
+                    group["name"]
+                )
             )
         if group["tests"] is not None and group["testset"] is not None:
             raise ValueError(
-                f"You should define either 'tests' or 'testset' key in each group, both found in {group['name']}"
+                "You should define either 'tests' or 'testset' key in each group, both found in {}".format(
+                    group["name"]
+                )
             )
 
         if group["tests"] is not None:
@@ -363,6 +596,7 @@ def process_config(tests):
                     ),
                 )
                 group_tests.append(test)
+
         if group["testset"] is not None:
             for test in tests.values():
                 if test.testsetName == group["testset"]:
@@ -387,10 +621,25 @@ def process_config(tests):
 
         feedback_printer = getattr(FeedbackMode, group["feedback"])
 
-        print(
-            feedback_printer(group["name"], group_passed, group_score, group_tests),
-            file=sys.stderr,
-        )
+        if FEEDBACK_MODE == "compact":
+            feedback_compact = feedback_printer(
+                group["name"], group_passed, group_score, group_tests, "compact"
+            )
+            print(feedback_compact, file=feedback_io_compact)
+        elif FEEDBACK_MODE == "full":
+            feedback_full = feedback_printer(
+                group["name"], group_passed, group_score, group_tests, "full"
+            )
+            print(feedback_full, file=feedback_io_full)
+        else:
+            feedback_compact = feedback_printer(
+                group["name"], group_passed, group_score, group_tests, "compact"
+            )
+            feedback_full = feedback_printer(
+                group["name"], group_passed, group_score, group_tests, "full"
+            )
+            print(feedback_compact, file=feedback_io_compact)
+            print(feedback_full, file=feedback_io_full)
 
         if group["required"] and not group_passed:
             break
@@ -406,7 +655,19 @@ def main():
         score = process_config(tests)
 
         print(score)
-        print("total:", format_points(score), file=sys.stderr)
+
+        print("total:", format_points(score, short=True), file=feedback_io_compact)
+        print("total:", format_points(score), file=feedback_io_full)
+        if FEEDBACK_MODE == "compact":
+            print(feedback_io_compact.getvalue(), file=sys.stderr, end="")
+        elif FEEDBACK_MODE == "full":
+            print(feedback_io_full.getvalue(), file=sys.stderr, end="")
+        else:
+            if len(feedback_io_full.getvalue()) < 1024:
+                print(feedback_io_full.getvalue(), file=sys.stderr, end="")
+            else:
+                print(feedback_io_full.getvalue(), file=sys.stderr, end="")
+
     except Exception as _:
         print(-1)
         print("Postprocessor failed", file=sys.stderr)
