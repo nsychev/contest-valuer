@@ -2,7 +2,7 @@
 #
 # Flexible postprocess script for scoring monitor in Yandex.Contest
 #
-# version: 5.2.1
+# version: 5.2.2
 # author:  Nikita Sychev (https://github.com/nsychev)
 # release: April 5, 2025
 # license: MIT
@@ -240,18 +240,14 @@ def parseTests(tests):
         if len(bounds) > 2:
             raise BadTestStringError(
                 tests,
-                "Interval `{}` contains more than two dash-separated integers".format(
-                    interval
-                ),
+                "Interval `{}` contains more than two dash-separated integers".format(interval),
             )
 
         left = bounds[0]
         right = bounds[-1]
         for test in range(left, right + 1):
             if test in numbers:
-                raise BadTestStringError(
-                    tests, "Test `{}` is used more than once".format(test)
-                )
+                raise BadTestStringError(tests, "Test `{}` is used more than once".format(test))
             numbers.append(test)
 
     return numbers
