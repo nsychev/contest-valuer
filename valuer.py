@@ -662,7 +662,7 @@ def main():
             if len(feedback_io_full.getvalue()) < 1024:
                 print(feedback_io_full.getvalue(), file=sys.stderr, end="")
             else:
-                print(feedback_io_full.getvalue(), file=sys.stderr, end="")
+                print(feedback_io_compact.getvalue(), file=sys.stderr, end="")
 
     except Exception as _:
         print(-1)
