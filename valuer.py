@@ -2,9 +2,9 @@
 #
 # Flexible postprocess script for scoring monitor in Yandex.Contest
 #
-# version: 5.2.2
+# version: 5.2.0
 # author:  Nikita Sychev (https://github.com/nsychev)
-# release: April 5, 2025
+# release: July 14, 2025
 # license: MIT
 # url:     https://github.com/nsychev/contest-valuer
 
@@ -28,7 +28,15 @@ Algorithm for getting test number. This should be either "sequential" or "smart"
                tests/testset2/01, ...)
 """
 
-FEEDBACK_MODE = "auto"  # "auto"/"full"/"compact"
+FEEDBACK_MODE = "auto"
+"""
+Feedback verboity mode. This should be either "full", "compact" or "auto".
+
+See `FEEDBACK_FULL` and `FEEDBACK_COMPACT` for details.
+
+"auto" mode will use "full" mode if the output is less than 1024 characters,
+and "compact" mode otherwise.
+"""
 
 FEEDBACK_FULL = {
     "GROUP": {
@@ -507,7 +515,7 @@ def process_config(tests):
 
     for group_id, groupConfig in zip(itertools.count(), config):
         group = {
-            "name": groupConfig.get("name", "{}".format(group_id)),
+            "name": groupConfig.get("name", "group {}".format(group_id)),
             "tests": groupConfig.get("tests"),
             "testset": groupConfig.get("testset"),
             "test_score": groupConfig.get("test_score", 0),
