@@ -33,7 +33,7 @@ This is the postprocess script I use in my contests in [Yandex Contest](https://
 ]
 ```
 
-[Russiaon Olympiad in Informatics, 2022, Regional Stage, Day 1, Problem 3](https://nerc.itmo.ru/school/archive/2021-2022/ru-olymp-regional-2022-day1.pdf): 22 tests, each test except for samples worth 5 points.
+[Russian Olympiad in Informatics, 2022, Regional Stage, Day 1, Problem 3](https://nerc.itmo.ru/school/archive/2021-2022/ru-olymp-regional-2022-day1.pdf): 22 tests, each test except for samples worth 5 points.
 
 ```
 [

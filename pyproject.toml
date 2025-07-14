@@ -1,0 +1,12 @@
+[project]
+name = "contest-valuer"
+version = "5.2.0"
+description = "Postprocess script to use in Yandex Contest problems"
+readme = "README.md"
+requires-python = ">=3.7"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "ruff>=0.12.3",
+]
